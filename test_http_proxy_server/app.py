@@ -17,12 +17,27 @@
             в теге <a> аттрибуте href,
             замена на http://localhost:5000
         + изменить форму (привести в нормальный вид)
+--------------------------------------------------------------------------------
+        + реализована стартовая страница, но c неё нельзя перейти на главную 
+          страницу https://habr.com
+
+        + неверно добавляются знаки (TM), например слово "Тостер" 
+          в шапке осталось не изменённым
+
+        - пропали иконки для просмотров и комментариев ,в консоли приложения 
+          сыпятся исключения, сломаны подгружаемые шрифты (пока не решено, 
+          не известно что делать при подгрузке с самого сайта файлов)
+
+        - очень долго открываются страницы (частично было из-за дополнительных 
+          запросов файлов и обработки страницы при этом)
+
+
 """
 import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify,request, redirect, \
-                  make_response, render_template
+                  make_response, render_template, url_for
 
 app = Flask(__name__)
 
@@ -65,6 +80,10 @@ def replace_habr_href_in_body(body):
 def index():
     if request.method == 'POST':
         g_path = request.form.get('path')
+        if g_path == "https://habr.com" or g_path == "https://habr.com/":
+            print("!====!Return g_path!====!")
+            print(g_path)
+            return redirect("http://localhost:5000/habr")
         path = path_url(g_path)
         print("!====!Return in index!====!")
         return redirect("http://localhost:5000/" + str(path))
@@ -72,51 +91,63 @@ def index():
         return render_template('index.html')
 
 
-@app.route('/<path:path_html>')
+@app.route('/<path:path_html>', methods=["GET"])
 def path(path_html):
-    habr_path = "https://habr.com/"+path_html
-    print("+++++HABR_PATH+++++: ", habr_path)
-
-    page = requests.get(habr_path)
-    print("!====!Get Habr_Page!====!")
-
-    page = BeautifulSoup(page.text.encode('utf-8'), "html.parser")
-    body_without_scripts = page.body
-    scripts = []
-    for x in body_without_scripts.find_all("script"):
-        scripts.append(x.extract())
-
-    # поиск слова с 6 буквами во всех словах body_without_scripts
-    new_rows = [
-        re.sub("[^\w]", "", word) \
-        for word in re.findall(r"\s\b\w{6}\b", body_without_scripts.get_text())
-        ]
-    myList = sorted(set(new_rows))
-    print("!====!Write Word_List!====!")
-
-    # замена слов в body_without_scripts
-    for word_in_list in myList:
-        # print(word_in_list)
-        body_without_scripts = re.sub(
-            r"\s\b" + word_in_list + r"\b", 
-            " " + word_in_list + "™", 
-            str(body_without_scripts)
-            )
+    if path_html == "habr":
+        habr_path = "https://habr.com/"
+    else:
+        habr_path = "https://habr.com/"+path_html
     
 
-    print("!====!Replace Word_in_Body!====!")
+    if request.headers['Accept'].split(",")[0] == "text/html":
 
-    my_html = BeautifulSoup(body_without_scripts, 'html.parser')
-    # добавляю скрипты в изменёный тег body
-    for script in scripts:
-        my_html.append(script)
-    print("!====!Append Script!====!")
+        print("+++++HABR_PATH+++++: ", habr_path)
 
-    my_html = replace_habr_href_in_body(my_html)
-    body_page = str(page.body)
-    page_html = str(page).replace(body_page, str(my_html))
-    print("!====!Page_Html_is_Done!====!")
-    return page_html
+        page = requests.get(habr_path)
+        print("!====!Get Habr_Page!====!")
+
+        page = BeautifulSoup(page.text.encode('utf-8'), "html.parser")
+        body_without_scripts = page.body
+        scripts = []
+        for x in body_without_scripts.find_all("script"):
+            scripts.append(x.extract())
+
+        # поиск слова с 6 буквами во всех словах body_without_scripts
+        new_rows = [
+            re.sub("[^\w]", "", word) \
+            for word in re.findall(r"\s\b\w{6}\b", 
+            body_without_scripts.get_text())
+            ]
+        myList = sorted(set(new_rows))
+        print("!====!Write Word_List!====!")
+        with open("templates/my_list_word.txt","w") as file:
+            for word in myList:
+                file.write(word + " ")  
+
+        # замена слов в body_without_scripts
+        for word_in_list in myList:
+            # print(word_in_list)
+            body_without_scripts = re.sub(
+                r"\b" + word_in_list + r"\b", 
+                " " + word_in_list + "™", 
+                str(body_without_scripts)
+                )
+        
+
+        print("!====!Replace Word_in_Body!====!")
+
+        my_html = BeautifulSoup(body_without_scripts, 'html.parser')
+        # добавляю скрипты в изменёный тег body
+        for script in scripts:
+            my_html.append(script)
+        print("!====!Append Script!====!")
+
+        my_html = replace_habr_href_in_body(my_html)
+        body_page = str(page.body)
+        page_html = str(page).replace(body_page, str(my_html))
+        print("!====!Page_Html_is_Done!====!")
+        return page_html
+
 
 
 if __name__ == '__main__':
